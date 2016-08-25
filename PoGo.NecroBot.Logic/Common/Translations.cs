@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
+using PoGo.NecroBot.Logic.Interfaces.Configuration;
 using PoGo.NecroBot.Logic.Logging;
 using PoGo.NecroBot.Logic.Utils;
 
@@ -205,15 +206,16 @@ namespace PoGo.NecroBot.Logic.Common
         HighestsPokemoCell,
         HumanWalkingVariant,
         AccountBanned,
-        CatchErrorKillSwitch,
-        CatchEscapeKillSwitch,
-        CatchFleeKillSwitch,
-        CatchMissedKillSwitch,
-        CatchSuccessKillSwitch,
-        PokestopsKillSwitch,
-        RequestHumanDistance,
-        CalculatingNextPokestop,
-        GoogleAPIFailed
+        GoogleAPIWarning,
+        Only10kmEggs,
+        SniperCount,
+        SnipeExceeds,
+        CatchExceeds,
+        PokeStopExceeds,
+        HumanWalkSnipe,
+        HumanWalkSnipeUpdate,
+        HumanWalkSnipeAddedPokestop,
+        HumanWalkSnipeDestinationReached
     }
 
     public class Translation : ITranslation
@@ -243,7 +245,7 @@ namespace PoGo.NecroBot.Logic.Common
             new KeyValuePair<TranslationString, string>(TranslationString.EventFortFailed,
                 "Name: {0} INFO: Looting failed, possible softban. Unban in: {1}/{2}"),
             new KeyValuePair<TranslationString, string>(TranslationString.EventFortTargeted,
-                "Traveling to Pokestop: {0} ({1}m) ({2} seconds)"),
+                "Traveling to Pokestop: {0} ({1}m) ({2} seconds) (route {3})"),
             new KeyValuePair<TranslationString, string>(TranslationString.EventProfileLogin, "Playing as {0}"),
             new KeyValuePair<TranslationString, string>(TranslationString.EventUsedIncense,
                 "Used Incense, remaining: {0}"),
@@ -259,9 +261,9 @@ namespace PoGo.NecroBot.Logic.Common
 
             //Logging Cleanup (mostly uneccessary information, may want a verbose pokemon capture logger setting)
             new KeyValuePair<TranslationString, string>(TranslationString.EventPokemonCaptureSuccess,
-                "({0}) | ({1}) {2} Lvl: {3} CP: ({4}/{5}) IV: {6}% | Chance: {7}% | {8}m dist | with a {9} ({10} left). | {11} EXP earned | {12} | lat: {13} long: {14}"),
+                "({0}) | ({1}) {2} Lvl: {3} CP: ({4}/{5}) IV: {6}% | Chance: {7}% | {8}m dist | with a {9} ({10} left). | {11} EXP earned | {12} | lat: {13} long: {14}\r\n \t Move1: {15}\t Move2: {16}"),
             new KeyValuePair<TranslationString, string>(TranslationString.EventPokemonCaptureFailed,
-                "({0}) | ({1}) {2} Lvl: {3} CP: ({4}/{5}) IV: {6}% | Chance: {7}% | {8}m dist | with a {9} ({10} left). | lat: {11} long: {12}"),
+                "({0}) | ({1}) {2} Lvl: {3} CP: ({4}/{5}) IV: {6}% IV: {6}% | Chance: {7}% | {8}m dist | with a {9} ({10} left). | lat: {11} long: {12}\r\n \t Move1: {13}\t Move2: {14}"),
 
 
             new KeyValuePair<TranslationString, string>(TranslationString.EventNoPokeballs,
@@ -405,7 +407,7 @@ namespace PoGo.NecroBot.Logic.Common
             new KeyValuePair<TranslationString, string>(TranslationString.ShowPokeTemplate,
                 "\n CP: {0} | IV: {1}% | Name: {2}"),
             new KeyValuePair<TranslationString, string>(TranslationString.HelpTemplate,
-                "Commands: \n \n /top <cp/iv> <amount> - Shows you top Pokemons. \n /all <cp/iv> - Shows you all Pokemons. \n /profile - Shows you profile. \n /loc - Shows you location. \n /items - Shows your items. \n /status - Shows you the Status of the Bot. \n /pokedex - Shows you Pokedex "),
+                "Commands: \n \n /help - Show commands. \n /top <cp/iv> <amount> - Shows you top Pokemons. \n /all <cp/iv> - Shows you all Pokemons. \n /profile - Shows you profile. \n /loc - Shows you location. \n /items - Shows your items. \n /status - Shows you the Status of the Bot. \n /pokedex - Shows you Pokedex. \n /restart - Restart NcroBot. \n /exit - Close NecroBot."),
             new KeyValuePair<TranslationString, string>(TranslationString.StatsXpTemplateString,
                 "{0} (Advance in {1}h {2}m | {3:n0}/{4:n0} XP)"),
             new KeyValuePair<TranslationString, string>(TranslationString.RequireInputText,
@@ -490,15 +492,16 @@ namespace PoGo.NecroBot.Logic.Common
             new KeyValuePair<TranslationString, string>(TranslationString.HighestsPokemoCell, "# CP {0}/{1} | ({2}% {3})\t| Lvl {4}\t {5}: {6}\t {7}: {8} {9}: {10} {11}: {12}"),
             new KeyValuePair<TranslationString, string>(TranslationString.HumanWalkingVariant, "Walking Speed: Has been changed, {0:n2} Km/h to {1:n2} Km/h"),
             new KeyValuePair<TranslationString, string>(TranslationString.AccountBanned, "Probably Permanent Ban!"),
-            new KeyValuePair<TranslationString, string>(TranslationString.CatchErrorKillSwitch, "KillSwitch: Catch error {0}/{1}"),
-            new KeyValuePair<TranslationString, string>(TranslationString.CatchEscapeKillSwitch, "KillSwitch: Catch escape {0}/{1}"),
-            new KeyValuePair<TranslationString, string>(TranslationString.CatchFleeKillSwitch, "KillSwitch: Catch flee {0}/{1}"),
-            new KeyValuePair<TranslationString, string>(TranslationString.CatchMissedKillSwitch, "KillSwitch: Catch missed {0}/{1}"),
-            new KeyValuePair<TranslationString, string>(TranslationString.CatchSuccessKillSwitch, "KillSwitch: Catch success {0}/{1}"),
-            new KeyValuePair<TranslationString, string>(TranslationString.PokestopsKillSwitch, "KillSwitch: Pokestops {0}/{1}"),
-            new KeyValuePair<TranslationString, string>(TranslationString.RequestHumanDistance, "Request human distance of pokestops..."),
-            new KeyValuePair<TranslationString, string>(TranslationString.CalculatingNextPokestop, "Calculating next pokestop..."),
-            new KeyValuePair<TranslationString, string>(TranslationString.GoogleAPIFailed, "You need to configure \"GoogleAPIKey\", get API Key in link: https://developers.google.com/maps/documentation/directions/get-api-key")
+            new KeyValuePair<TranslationString, string>(TranslationString.GoogleAPIWarning, "Without a Google Api, you will have 2500 free quota limit, if you reach the maximum quota, try to change your IP. To configure \"GoogleAPIKey\", get API Key in link: https://developers.google.com/maps/documentation/directions/get-api-key"),
+            new KeyValuePair<TranslationString, string>(TranslationString.Only10kmEggs, "Player below level 20, saving this 10 km Egg for later"),
+            new KeyValuePair<TranslationString, string>(TranslationString.SniperCount, "Sniper count {0}"),
+            new KeyValuePair<TranslationString, string>(TranslationString.SnipeExceeds, "Sniper need to take a rest before your account is banned"),
+            new KeyValuePair<TranslationString, string>(TranslationString.CatchExceeds, "You are catching too fast. Your cannot catch another one until {0} seconds later"),
+            new KeyValuePair<TranslationString, string>(TranslationString.PokeStopExceeds, "You are visiting pokestops too fast. Your cannot visit another one until {0} seconds later"),
+            new KeyValuePair<TranslationString, string>(TranslationString.HumanWalkSnipe, "(HUMAN WALK) Found {0} spawning | lat: {1}, lng: {2}, dist {3:0.00}m , expired in {4:00} min {5:00} sec | Walk time est : {6:00} min {7:00} sec | Spin: {8} | Catch : {9}"),
+            new KeyValuePair<TranslationString, string>(TranslationString.HumanWalkSnipeUpdate, "(HUMAN WALK) Found {0} pokemon matched with you filters. Human walking sniper won't catch em all, but try to catch as many as possible"),
+            new KeyValuePair<TranslationString, string>(TranslationString.HumanWalkSnipeAddedPokestop, "(HUMAN WALK) You are {0:0.00m} away from nearest pokestop. Restart farming at this place with {1} pokestops"),
+            new KeyValuePair<TranslationString, string>(TranslationString.HumanWalkSnipeDestinationReached, "(HUMAN WALK) destination reached | lat: {0}, lng: {1}")
         };
 
         [JsonProperty("PokemonStrings",

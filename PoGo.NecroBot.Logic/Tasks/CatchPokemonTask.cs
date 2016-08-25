@@ -25,6 +25,28 @@ namespace PoGo.NecroBot.Logic.Tasks
 
         private static Random Random => new Random((int)DateTime.Now.Ticks);
 
+        private static bool CatchThresholdExceeds(ISession session)
+        {
+            if (!session.LogicSettings.UseCatchLimit) return false;
+            if (session.Stats.PokemonTimestamps.Count >= session.LogicSettings.CatchPokemonLimit)
+            {
+                // delete uesless data
+                int toRemove = session.Stats.PokemonTimestamps.Count - session.LogicSettings.CatchPokemonLimit;
+                if (toRemove > 0)
+                {
+                    session.Stats.PokemonTimestamps.RemoveRange(0, toRemove);
+                }
+                var sec = (DateTime.Now - new DateTime(session.Stats.PokemonTimestamps.First())).TotalSeconds;
+                var limit = session.LogicSettings.CatchPokemonLimitMinutes * 60;
+                if (sec < limit)
+                {
+                    session.EventDispatcher.Send(new ErrorEvent { Message = session.Translation.GetTranslation(TranslationString.CatchExceeds, Math.Round(limit - sec))});
+                    return true;
+                }
+            }
+            return false;
+        }
+
         public static async Task Execute(ISession session, CancellationToken cancellationToken, dynamic encounter, MapPokemon pokemon,
             FortData currentFortData = null, ulong encounterId = 0)
         {
@@ -33,6 +55,8 @@ namespace PoGo.NecroBot.Logic.Tasks
 
             // If the encounter is null nothing will work below, so exit now
             if (encounter == null) return;
+
+            if (CatchThresholdExceeds(session)) return;
 
             float probability = encounter.CaptureProbability?.CaptureProbability_[0];
 
@@ -221,6 +245,7 @@ namespace PoGo.NecroBot.Logic.Tasks
                     {
                         evt.FamilyCandies = caughtPokemonResponse.CaptureAward.Candy.Sum();
                     }
+                    session.Stats.PokemonTimestamps.Add(DateTime.Now.Ticks);
                 }
 
                 evt.CatchType = encounter is EncounterResponse
@@ -228,7 +253,26 @@ namespace PoGo.NecroBot.Logic.Tasks
                     : encounter is DiskEncounterResponse
                         ? session.Translation.GetTranslation(TranslationString.CatchTypeLure)
                         : session.Translation.GetTranslation(TranslationString.CatchTypeIncense);
-                evt.Id = encounter is EncounterResponse ? pokemon.PokemonId : encounter?.PokemonData.PokemonId;
+                evt.CatchTypeText = encounter is EncounterResponse
+                    ? "normal"
+                    : encounter is DiskEncounterResponse
+                        ? "lure"
+                        : "incense";
+                evt.Id = encounter is EncounterResponse 
+                    ? pokemon.PokemonId : encounter?.PokemonData.PokemonId;
+                evt.EncounterId = encounter is EncounterResponse || encounter is IncenseEncounterResponse
+                    ? pokemon.EncounterId
+                    : encounterId;
+                evt.Move1 = PokemonInfo.GetPokemonMove1(encounter is EncounterResponse
+                    ? encounter.WildPokemon?.PokemonData
+                    : encounter?.PokemonData);
+                evt.Move2 = PokemonInfo.GetPokemonMove2(encounter is EncounterResponse
+                    ? encounter.WildPokemon?.PokemonData
+                    : encounter?.PokemonData);
+                evt.Expires = pokemon?.ExpirationTimestampMs ?? 0;
+                evt.SpawnPointId = encounter is EncounterResponse || encounter is IncenseEncounterResponse
+                    ? pokemon.SpawnPointId
+                    : currentFortData?.Id;
                 evt.Level =
                     PokemonInfo.GetLevel(encounter is EncounterResponse
                         ? encounter.WildPokemon?.PokemonData
@@ -259,21 +303,6 @@ namespace PoGo.NecroBot.Logic.Tasks
                 if (session.LogicSettings.TransferDuplicatePokemonOnCapture && session.LogicSettings.TransferDuplicatePokemon)
                     await TransferDuplicatePokemonTask.Execute(session, cancellationToken);
                 DelayingUtils.Delay(session.LogicSettings.DelayBetweenPokemonCatch, 0);
-
-                if (session.LogicSettings.UseKillSwitchCatch)
-                {
-                    if (caughtPokemonResponse.Status == CatchPokemonResponse.Types.CatchStatus.CatchError)
-                        session.KillSwitch.CatchError(session);
-                    if (caughtPokemonResponse.Status == CatchPokemonResponse.Types.CatchStatus.CatchEscape)
-                        session.KillSwitch.CatchEscape(session);
-                    if (caughtPokemonResponse.Status == CatchPokemonResponse.Types.CatchStatus.CatchFlee)
-                        session.KillSwitch.CatchFlee(session);
-                    if (caughtPokemonResponse.Status == CatchPokemonResponse.Types.CatchStatus.CatchMissed)
-                        session.KillSwitch.CatchMissed(session);
-                    if (caughtPokemonResponse.Status == CatchPokemonResponse.Types.CatchStatus.CatchSuccess)
-                        session.KillSwitch.CatchSuccess(session);
-                }
-
             } while (caughtPokemonResponse.Status == CatchPokemonResponse.Types.CatchStatus.CatchMissed ||
                      caughtPokemonResponse.Status == CatchPokemonResponse.Types.CatchStatus.CatchEscape);
         }
